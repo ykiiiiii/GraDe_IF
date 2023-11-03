@@ -221,6 +221,7 @@ class BlosumTransition:
         temperatue = self.temperature_list[t_int.long()]       
         q_x = self.original_score.unsqueeze(0)/temperatue.unsqueeze(2)
         q_x = torch.softmax(q_x,dim=2)
+        q_x[q_x < 1e-6] = 1e-6
         return q_x
 
     def get_Qt(self, t_normal, device):
@@ -398,20 +399,20 @@ class GraDe_IF(nn.Module):
         if self.config['noise_type'] == 'uniform':
             Qtb = self.transition_model.get_Qt_bar(alpha_t_bar, data.x.device)
             Qsb = self.transition_model.get_Qt_bar(alpha_s_bar, data.x.device)
-            Qt = self.transition_model.get_Qt(beta_t, data.x.device)
         else:
             Qtb = self.transition_model.get_Qt_bar(t, data.x.device)
             Qsb = self.transition_model.get_Qt_bar(s, data.x.device)
-            Qt = self.transition_model.get_Qt(t, data.x.device)
-        
-        if step >= 50:
-            Qt = (Qsb/Qtb)/(Qsb/Qtb).sum(dim=-1).unsqueeze(dim=2)
+
+        Qt = (Qsb/Qtb)/(Qsb/Qtb).sum(dim=-1).unsqueeze(dim=2)
 
         noise_data = data.clone()
         noise_data.x = zt #x_t
         pred = self.model(noise_data,t*self.timesteps)
         pred_X = F.softmax(pred,dim = -1) #\hat{p(X)}_0
         
+        if isinstance(cond, torch.Tensor):
+            pred_X[cond] = data.x[cond]
+
         if last_step:
             pred_X = F.softmax(pred,dim = -1)
             sample_s = pred_X.argmax(dim = 1)
@@ -434,16 +435,7 @@ class GraDe_IF(nn.Module):
 
         X_s = F.one_hot(sample_s,num_classes = 20).float()
 
-        if cond:
-            mutation_index = data.ptr[:-1]+data.mutation_pos #find tensor index from mutation position
-            clone_graph = Data.clone(data)
-            noisy_data = self.apply_noise(clone_graph,s*self.timesteps)
-            clone_X_s = noisy_data.x.type_as(X_s)
-            clone_X_s[mutation_index] = X_s[mutation_index]#subititude mutation position with model predicted value    
-            return clone_X_s,final_predicted_X if last_step else None
-        
-        else:
-            return X_s,final_predicted_X if last_step else None
+        return X_s,final_predicted_X if last_step else None
     
     def sample(self,data,cond = False,temperature=1.0,stop = 0):
         limit_dist = torch.ones(20)/20
@@ -458,7 +450,7 @@ class GraDe_IF(nn.Module):
             zt , final_predicted_X  = self.sample_p_zs_given_zt(t_norm, s_norm,zt, data,cond,temperature,last_step=s_int==stop)
         return zt,final_predicted_X
     
-    def ddim_sample(self,data,cond = False,diverse=False,stop = 0,step=10):
+    def ddim_sample(self,data,cond = False,diverse=False,stop = 0,step=50):
         limit_dist = torch.ones(20)/20
         zt = self.sample_discrete_feature_noise(limit_dist = limit_dist,num_node = data.x.shape[0]) #[N,20] one hot 
         zt = zt.to(data.x.device)
