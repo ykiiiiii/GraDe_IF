@@ -24,7 +24,6 @@ from utils import PredefinedNoiseScheduleDiscrete
 from model.egnn_pytorch.egnn_pytorch_geometric import EGNN_Sparse
 from model.egnn_pytorch.utils import nodeEncoder,edgeEncoder
 from dataset_src.large_dataset import Cath
-from dataset_src.utils import NormalizeProtein,substitute_label
 
 amino_acids_type = ['A', 'R', 'N', 'D', 'C', 'Q', 'E', 'G', 'H', 'I',
                 'L', 'K', 'M', 'F', 'P', 'S', 'T', 'W', 'Y', 'V']
@@ -249,7 +248,6 @@ class GraDe_IF(nn.Module):
         elif config['noise_type'] == 'blosum':
             self.transition_model = BlosumTransition(timestep=self.timesteps+1)
 
-
         assert objective in {'pred_noise', 'pred_x0'}
 
         self.noise_schedule = PredefinedNoiseScheduleDiscrete(noise_schedule='cosine',timesteps=self.timesteps,noise_type='uniform')
@@ -265,8 +263,11 @@ class GraDe_IF(nn.Module):
 
     def apply_noise(self,data,t_int):
         t_float = t_int / self.timesteps
-        alpha_t_bar = self.noise_schedule.get_alpha_bar(t_normalized=t_float)      # (bs, 1)
-        Qtb = self.transition_model.get_Qt_bar(alpha_t_bar, device=data.x.device)
+        if self.config['noise_type'] == 'uniform':
+            alpha_t_bar = self.noise_schedule.get_alpha_bar(t_normalized=t_float)      # (bs, 1)
+            Qtb = self.transition_model.get_Qt_bar(alpha_t_bar, device=data.x.device)
+        else:
+            Qtb = self.transition_model.get_Qt(t_float, device=data.x.device)
         prob_X = (Qtb[data.batch]@data.x[:,:20].unsqueeze(2)).squeeze()
         X_t = prob_X.multinomial(1).squeeze()
         noise_X = F.one_hot(X_t,num_classes = 20)
@@ -314,7 +315,6 @@ class GraDe_IF(nn.Module):
         unnormalized_prob_X = weighted_X.sum(dim=1)             #[N,d_t-1]
         unnormalized_prob_X[torch.sum(unnormalized_prob_X, dim=-1) == 0] = 1e-5
         prob_pred = unnormalized_prob_X / torch.sum(unnormalized_prob_X, dim=-1, keepdim=True)  #[N,d_t-1]
-        # loss = F.kl_div(input=prob_pred.log(), target=prob_true, reduction='mean')
         loss = self.loss_fn(prob_pred,prob_true,reduction='mean')
         return loss
 
@@ -332,8 +332,6 @@ class GraDe_IF(nn.Module):
         total_val_loss = kl_prior+diffusion_loss+prob0
         return total_val_loss,kl_prior,diffusion_loss,prob0
     
-
-
     def compute_batched_over0_posterior_distribution(self,X_t,Q_t,Qsb,Qtb,data):
         """ M: X or E
         Compute xt @ Qt.T * x0 @ Qsb / x0 @ Qtb @ xt.T for each possible value of x0 
@@ -389,13 +387,8 @@ class GraDe_IF(nn.Module):
         """
         sample zs~p(zs|zt)
         """
-        beta_t = self.noise_schedule(t_normalized=t)
-        alpha_s_bar = self.noise_schedule.get_alpha_bar(t_normalized=s)#check for this
-        alpha_t_bar = self.noise_schedule.get_alpha_bar(t_normalized=t)#check for this
-
-        beta_t = self.noise_schedule(t_normalized=t)
-        alpha_s_bar = self.noise_schedule.get_alpha_bar(t_normalized=s)#check for this
-        alpha_t_bar = self.noise_schedule.get_alpha_bar(t_normalized=t)#check for this
+        alpha_s_bar = self.noise_schedule.get_alpha_bar(t_normalized=s)
+        alpha_t_bar = self.noise_schedule.get_alpha_bar(t_normalized=t)
         if self.config['noise_type'] == 'uniform':
             Qtb = self.transition_model.get_Qt_bar(alpha_t_bar, data.x.device)
             Qsb = self.transition_model.get_Qt_bar(alpha_s_bar, data.x.device)
@@ -403,12 +396,12 @@ class GraDe_IF(nn.Module):
             Qtb = self.transition_model.get_Qt_bar(t, data.x.device)
             Qsb = self.transition_model.get_Qt_bar(s, data.x.device)
 
-        Qt = (Qsb/Qtb)/(Qsb/Qtb).sum(dim=-1).unsqueeze(dim=2)
+        Qt = (Qsb/Qtb)/(Qsb/Qtb).sum(dim=-1).unsqueeze(dim=2) #approximate
 
         noise_data = data.clone()
-        noise_data.x = zt #x_t
+        noise_data.x = zt 
         pred = self.model(noise_data,t*self.timesteps)
-        pred_X = F.softmax(pred,dim = -1) #\hat{p(X)}_0
+        pred_X = F.softmax(pred,dim = -1) 
         
         if isinstance(cond, torch.Tensor):
             pred_X[cond] = data.x[cond]
@@ -705,8 +698,9 @@ if __name__ == "__main__" :
     parser.add_argument('--device_id', type = int,default=0,
                         help='cuda device')
 
-    parser.add_argument('--sample_temperature', type = float,default=1.0,
-                        help='the temperature of predictive probability when t = 0')
+    parser.add_argument('--batch_size', type = int,default=64,help='batch_size')
+    
+    parser.add_argument('--ema_decay', type = float,default=0.995,help='ema_decay')
     
     parser.add_argument('--depth', type = int,default=1,
                         help='number of GNN layers')
@@ -740,8 +734,8 @@ if __name__ == "__main__" :
         val_dataset = Cath(val_ID,config['val_dir'])
         test_dataset = Cath(test_ID,config['test_dir'])
         print(f'train on CATH dataset with {len(train_dataset)}  training data and {len(val_dataset)}  val data')
-    elif config['dataset'] == 'TS':
 
+    elif config['dataset'] == 'TS':
         basedir = config['train_dir']
         train_ID ,val_ID= os.listdir(config['ts_train_dir']),os.listdir(config['ts_test_dir'])
         train_dataset = Cath(train_ID,config['ts_train_dir'])
@@ -761,10 +755,8 @@ if __name__ == "__main__" :
                         train_dataset, 
                         val_dataset,
                         test_dataset,
-                        train_batch_size = 32,
-                        gradient_accumulate_every=1,
-                        save_and_sample_every=1,
-                        train_num_steps=90000,
+                        train_batch_size = config['batch_size'],
                         train_lr=config['lr'],
-                        weight_decay = config['wd'])
+                        weight_decay = config['wd'],
+                        ema_decay= config['ema_decay'])
     trainer.train()
