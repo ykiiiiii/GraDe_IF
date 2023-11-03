@@ -49,7 +49,7 @@ def num_to_groups(num, divisor):
 
 
 class EGNN_NET(torch.nn.Module):
-    def __init__(self, input_feat_dim, hidden_channels, edge_attr_dim,  dropout, n_layers, output_dim = 20,
+    def __init__(self, input_feat_dim, hidden_channels, edge_attr_dim,  dropout=0.0, n_layers=1, output_dim = 20,
                  embedding=False, embedding_dim=64, mlp_num=2,update_edge = True,embed_ss = -1,norm_feat = False):
         super(EGNN_NET, self).__init__()
         torch.manual_seed(12345)
@@ -234,7 +234,7 @@ class BlosumTransition:
         return q_x
 
 class GraDe_IF(nn.Module):
-    def __init__(self,model,*,timesteps=500,sampling_timesteps = None,loss_type='CE',objective = 'pred_x0',config = {},schedule_fn_kwargs = dict()):
+    def __init__(self,model,*,timesteps=500,sampling_timesteps = None,loss_type='CE',objective = 'pred_x0',config = {'noise_type':'uniform'},schedule_fn_kwargs = dict()):
         super().__init__()
         self.model = model
         # self.self_condition = self.model.self_condition
@@ -527,8 +527,8 @@ class Trianer(object):
 
         self.dl = cycle(dl)
 
-        self.val_loader = DataLoader(val_dataset,batch_size=500,shuffle=False, pin_memory = True, num_workers = 6)
-        self.test_loader = DataLoader(test_dataset,batch_size=500,shuffle=False, pin_memory = True, num_workers = 6)
+        self.val_loader = DataLoader(val_dataset,batch_size=train_batch_size,shuffle=False, pin_memory = True, num_workers = 6)
+        self.test_loader = DataLoader(test_dataset,batch_size=train_batch_size,shuffle=False, pin_memory = True, num_workers = 6)
         # optimizer
 
         self.opt = Adam(diffusion_model.parameters(), lr = train_lr, betas = adam_betas,weight_decay=weight_decay)
@@ -622,8 +622,7 @@ class Trianer(object):
                         for data in self.val_loader:
                             data = data.to(device)
                             val_loss,_,_,_ = self.ema.ema_model.compute_val_loss(data,False)
-
-                            zt,sample_graph = self.ema.ema_model.sample(data,self.config['sample_temperature'],stop = 250) #zt is the output of Neural Netowrk and sample graph is a sample of it
+                            zt,sample_graph = self.ema.ema_model.ddim_sample(data,step=50) #zt is the output of Neural Netowrk and sample graph is a sample of it
                             recovery = np.mean(seq_recovery(data,sample_graph))
                             sub_list.append(recovery)
                             print(f'recovery rate is {recovery}')
