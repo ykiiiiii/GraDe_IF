@@ -440,6 +440,7 @@ class Cath_imem(InMemoryDataset):
     def get_calpha_graph(self, rec, c_alpha_coords, n_coords, c_coords, coords, struc_2nd_res = None):
         scalar_feature, vec_feature = self.get_node_features(
             n_coords, c_coords, c_alpha_coords, coord_mask=None, with_coord_mask=False, use_angle=self.use_angle, use_omega=self.use_omega)
+        print(scalar_feature.shape)
         # Extract 3D coordinates and n_i,u_i,v_i
         # vectors of representative residues ################
         residue_representatives_loc_list = []
@@ -562,8 +563,7 @@ class Cath_imem(InMemoryDataset):
 
             graph.edge_attr = torch.cat(
                 [graph.edge_attr, edge_feat_ori_feat], axis=1)  # (num_edges, 17)
-            graph = self.remove_node(graph, graph.x.shape[0]-1)
-            # self.get_calpha_graph_single(graph, 6)
+
             return graph
         else:
             return None
