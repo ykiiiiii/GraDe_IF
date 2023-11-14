@@ -267,7 +267,7 @@ class GraDe_IF(nn.Module):
             alpha_t_bar = self.noise_schedule.get_alpha_bar(t_normalized=t_float)      # (bs, 1)
             Qtb = self.transition_model.get_Qt_bar(alpha_t_bar, device=data.x.device)
         else:
-            Qtb = self.transition_model.get_Qt(t_float, device=data.x.device)
+            Qtb = self.transition_model.get_Qt_bar(t_float, device=data.x.device)
         prob_X = (Qtb[data.batch]@data.x[:,:20].unsqueeze(2)).squeeze()
         X_t = prob_X.multinomial(1).squeeze()
         noise_X = F.one_hot(X_t,num_classes = 20)
