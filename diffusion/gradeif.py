@@ -1,4 +1,3 @@
-import math
 import os
 import argparse
 from pathlib import Path
@@ -319,8 +318,6 @@ class GraDe_IF(nn.Module):
         return loss
 
     def compute_val_loss(self,data,evaluate_all=False):
-
-
         t_int = torch.randint(0, self.timesteps + 1, size=(data.batch[-1]+1, 1), device=data.x.device).float()
         diffusion_loss = self.diffusion_loss(data,t_int)
         return diffusion_loss
@@ -413,7 +410,6 @@ class GraDe_IF(nn.Module):
         unnormalized_prob_X[torch.sum(unnormalized_prob_X, dim=-1) == 0] = 1e-5
         prob_X = unnormalized_prob_X / torch.sum(unnormalized_prob_X, dim=-1, keepdim=True)  #[N,d_t-1]
         
-
         if diverse :
             sample_s = prob_X.multinomial(1).squeeze()
         else:
@@ -488,7 +484,7 @@ class Trianer(object):
         gradient_accumulate_every = 1,
         train_lr = 1e-4,
         weight_decay = 1e-2,
-        train_num_steps = 100000,
+        train_num_steps = 200000,
         ema_update_every = 10,
         ema_decay = 0.995,
         adam_betas = (0.9, 0.99),
@@ -528,7 +524,7 @@ class Trianer(object):
         Path(results_folder+'/figure/').mkdir(exist_ok = True)
 
         self.step = 0
-        self.save_file_name = self.config['Date']+f"_result_lr={self.config['lr']}_dp={self.config['drop_out']}_clip={self.config['clip_grad_norm']}_timestep={self.config['timesteps']}_depth={self.config['depth']}_hidden={self.config['hidden_dim']}_embedding={self.config['embedding']}_embed_dim={self.config['embedding_dim']}_ss={self.config['embed_ss']}"
+        self.save_file_name = self.config['Date']+f"_result_lr={self.config['lr']}_dp={self.config['drop_out']}_clip={self.config['clip_grad_norm']}_timestep={self.config['timesteps']}_depth={self.config['depth']}_hidden={self.config['hidden_dim']}_embedding={self.config['embedding']}_embed_dim={self.config['embedding_dim']}_ss={self.config['embed_ss']}_noise={self.config['noise_type']}"
     def save(self, milestone):
 
         data = {
