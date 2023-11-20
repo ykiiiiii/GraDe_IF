@@ -96,8 +96,8 @@ if __name__ == '__main__':
     # generate a batch of protein graph
     error_pdb = []
     for key in ['test','validation','train']:
-        pdb_dir =f'dataset/CATH42/{key}/'
-        save_dir = f'dataset/CATH42/process/{key}/'
+        pdb_dir =f'dataset/raw/{key}/'
+        save_dir = f'dataset/full_aa/process/{key}/'
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
         filename_list = [i for i in os.listdir(pdb_dir) if i.endswith('.pdb')]
