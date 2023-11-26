@@ -564,12 +564,8 @@ class Cath_imem(InMemoryDataset):
 
             graph.edge_attr = torch.cat(
                 [graph.edge_attr, edge_feat_ori_feat], axis=1)  # (num_edges, 17)
-<<<<<<< HEAD
             # graph = self.remove_node(graph, graph.x.shape[0]-1)
             # self.get_calpha_graph_single(graph, 6)
-=======
-
->>>>>>> 084611016b02b072e8a00d0c92afa7a8115ab8bc
             return graph
         else:
             return None
