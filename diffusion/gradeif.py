@@ -1,4 +1,3 @@
-import math
 import os
 import argparse
 from pathlib import Path
@@ -267,7 +266,7 @@ class GraDe_IF(nn.Module):
             alpha_t_bar = self.noise_schedule.get_alpha_bar(t_normalized=t_float)      # (bs, 1)
             Qtb = self.transition_model.get_Qt_bar(alpha_t_bar, device=data.x.device)
         else:
-            Qtb = self.transition_model.get_Qt(t_float, device=data.x.device)
+            Qtb = self.transition_model.get_Qt_bar(t_float, device=data.x.device)
         prob_X = (Qtb[data.batch]@data.x[:,:20].unsqueeze(2)).squeeze()
         X_t = prob_X.multinomial(1).squeeze()
         noise_X = F.one_hot(X_t,num_classes = 20)
@@ -319,18 +318,9 @@ class GraDe_IF(nn.Module):
         return loss
 
     def compute_val_loss(self,data,evaluate_all=False):
-        # 1. The KL between q(z_T | x) and p(z_T) = Uniform(1/num_classes). Should be close to zero.
-        kl_prior = self.kl_prior(data)
-        # 2. 
-
         t_int = torch.randint(0, self.timesteps + 1, size=(data.batch[-1]+1, 1), device=data.x.device).float()
         diffusion_loss = self.diffusion_loss(data,t_int)
-        # 3. Reconstruction loss
-        # Compute L0 term : -log p (X, E, y | z_0) = reconstruction loss
-        prob0 = self.reconstruction_logp(data)
-
-        total_val_loss = kl_prior+diffusion_loss+prob0
-        return total_val_loss,kl_prior,diffusion_loss,prob0
+        return diffusion_loss
     
     def compute_batched_over0_posterior_distribution(self,X_t,Q_t,Qsb,Qtb,data):
         """ M: X or E
@@ -420,7 +410,6 @@ class GraDe_IF(nn.Module):
         unnormalized_prob_X[torch.sum(unnormalized_prob_X, dim=-1) == 0] = 1e-5
         prob_X = unnormalized_prob_X / torch.sum(unnormalized_prob_X, dim=-1, keepdim=True)  #[N,d_t-1]
         
-
         if diverse :
             sample_s = prob_X.multinomial(1).squeeze()
         else:
@@ -477,14 +466,9 @@ def seq_recovery(data,pred_seq):
     data.x is nature sequence
 
     '''
-    recovery_list = []
-    for i in range(data.ptr.shape[0]-1):
-        nature_seq = data.x[data.ptr[i]:data.ptr[i+1],:].argmax(dim=1)
-        pred = pred_seq[data.ptr[i]:data.ptr[i+1],:].argmax(dim=1)
-        recovery = (nature_seq==pred).sum()/nature_seq.shape[0]
-        recovery_list.append(recovery.item())
-        ind = (nature_seq==pred)
-    return recovery_list,ind
+    ind = (data.x.argmax(dim=1) == pred_seq.argmax(dim=1))
+    recovery = ind.sum()/ind.shape[0]
+    return recovery,ind.cpu()
 
 
 class Trianer(object):
@@ -500,11 +484,11 @@ class Trianer(object):
         gradient_accumulate_every = 1,
         train_lr = 1e-4,
         weight_decay = 1e-2,
-        train_num_steps = 100000,
+        train_num_steps = 200000,
         ema_update_every = 10,
         ema_decay = 0.995,
         adam_betas = (0.9, 0.99),
-        save_and_sample_every = 10000,
+        save_and_sample_every = 2,
         num_samples = 25,
         results_folder = './diffusion/results',
     ):    
@@ -540,7 +524,7 @@ class Trianer(object):
         Path(results_folder+'/figure/').mkdir(exist_ok = True)
 
         self.step = 0
-        self.save_file_name = self.config['Date']+f"_result_lr={self.config['lr']}_dp={self.config['drop_out']}_clip={self.config['clip_grad_norm']}_timestep={self.config['timesteps']}_depth={self.config['depth']}_hidden={self.config['hidden_dim']}_embedding={self.config['embedding']}_embed_dim={self.config['embedding_dim']}_ss={self.config['embed_ss']}"
+        self.save_file_name = self.config['Date']+f"_result_lr={self.config['lr']}_dp={self.config['drop_out']}_clip={self.config['clip_grad_norm']}_timestep={self.config['timesteps']}_depth={self.config['depth']}_hidden={self.config['hidden_dim']}_embedding={self.config['embedding']}_embed_dim={self.config['embedding_dim']}_ss={self.config['embed_ss']}_noise={self.config['noise_type']}"
     def save(self, milestone):
 
         data = {
@@ -551,7 +535,7 @@ class Trianer(object):
             'ema': self.ema.state_dict(),
         }
 
-        torch.save(data, os.path.join(str(self.results_folder),'weight', self.save_file_name+f'_{milestone}.pt'))
+        torch.save(data, os.path.join(str(self.results_folder),'weight', self.save_file_name+f'_{milestone//((len(self.ds)//self.batch_size))}.pt'))
     
     def load(self, milestone,filename =False):
         device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -613,27 +597,29 @@ class Trianer(object):
                         
                 self.ema.to(device)
                 self.ema.update()
-
                 if self.step != 0 and self.step % (self.save_and_sample_every*(len(self.ds)//self.batch_size)) == 0:
                     self.ema.ema_model.eval()
 
                     with torch.no_grad():
-                        sub_list = []
+                        ind_all = torch.tensor([])
+                        all_prob = torch.tensor([])
+                        all_seq = torch.tensor([])
                         for data in self.val_loader:
                             data = data.to(device)
-                            val_loss,_,_,_ = self.ema.ema_model.compute_val_loss(data,False)
-                            zt,sample_graph = self.ema.ema_model.ddim_sample(data,step=50) #zt is the output of Neural Netowrk and sample graph is a sample of it
-                            recovery = np.mean(seq_recovery(data,sample_graph))
-                            sub_list.append(recovery)
-                            print(f'recovery rate is {recovery}')
-                            ll_fullseq = F.cross_entropy(zt,data.x, reduction='mean').item()
-                            print(f'perplexity : {np.exp(-ll_fullseq):.2f}')
+                            val_loss = self.ema.ema_model.compute_val_loss(data,False)
+                            prob,sample_graph = self.ema.ema_model.ddim_sample(data,diverse = True,step=100) #zt is the output of Neural Netowrk and sample graph is a sample of it
+                            _, ind = seq_recovery(data,sample_graph)
+                            ind_all = torch.cat([ind_all,ind])
+                            all_prob = torch.cat([all_prob,prob.cpu()])
+                            all_seq = torch.cat([all_seq,data.x.cpu()])
 
                         milestone = self.step // self.save_and_sample_every
 
-                    recovery_list.append(np.mean(sub_list))
-                    perplexity.append(np.exp(ll_fullseq)) 
-                    
+                    recovery_list.append((ind_all.sum()/ind_all.shape[0]).item())
+                    ll_fullseq = F.cross_entropy(all_prob,all_seq, reduction='mean').item()
+                    perplexity.append(np.exp(ll_fullseq)*0.01) #for the same scale
+                    print(f'recovery rate is {recovery_list[-1]}')
+                    print(f'perplexity : {perplexity[-1]:.2f}')
                     fig, axs = plt.subplots(2,1, figsize=(10, 5))
                     axs[0].plot(train_loss,label = 'train_loss')
                     axs[0].plot(val_loss_list,label = 'val_loss')
@@ -644,7 +630,7 @@ class Trianer(object):
                     axs[0].legend(loc="upper right", fancybox=True)
                     axs[0].set_title(f'best_recovery={max(recovery_list):.4f}')
 
-                    plt.savefig(os.path.join(str(self.results_folder),'figure', self.save_file_name+f'_{self.step}.png'),dpi = 200)
+                    plt.savefig(os.path.join(str(self.results_folder),'figure', self.save_file_name+f'.png'),dpi = 200)
                     plt.close()
 
                     if recovery_list[-1] == max(recovery_list):
@@ -716,7 +702,7 @@ if __name__ == "__main__" :
     parser.add_argument('--norm_feat', action='store_true',#default = False,
                         help='whether normalization node feature in egnn')  
 
-    parser.add_argument('--updeate_edge', action='store_false',help='whether update edge feature in egnn')
+    parser.add_argument('--update_edge', action='store_false',help='whether update edge feature in egnn')
     
     parser.add_argument('--embed_ss', type = int,default=-1,
                         help='when add ss embedding into gnn') 
@@ -737,7 +723,7 @@ if __name__ == "__main__" :
     elif config['dataset'] == 'TS':
         basedir = config['train_dir']
         train_ID ,val_ID= os.listdir(config['ts_train_dir']),os.listdir(config['ts_test_dir'])
-        train_dataset = Cath(train_ID,config['ts_train_dir'])
+        train_dataset = Cath(train_ID,config['ts_train_dir'])#
         val_dataset = Cath(val_ID,config['ts_test_dir'])
         test_dataset = Cath(val_ID,config['ts_test_dir'])
         print(f'train on TS dataset with {len(train_dataset)}  training data and {len(val_dataset)}  val data')        
@@ -747,7 +733,10 @@ if __name__ == "__main__" :
     input_feat_dim = train_dataset[0].x.shape[1]+train_dataset[0].extra_x.shape[1]
     edge_attr_dim = train_dataset[0].edge_attr.shape[1]
 
-    model = EGNN_NET(input_feat_dim=input_feat_dim,hidden_channels=config['hidden_dim'],edge_attr_dim=edge_attr_dim,dropout=config['drop_out'],n_layers=config['depth'],update_edge = True,embedding=config['embedding'],embedding_dim=config['embedding_dim'],norm_feat=config['norm_feat'],embed_ss=config['embed_ss'])
+    config['input_feat_dim'] = input_feat_dim
+    config['edge_attr_dim'] = edge_attr_dim
+
+    model = EGNN_NET(input_feat_dim=input_feat_dim,hidden_channels=config['hidden_dim'],edge_attr_dim=edge_attr_dim,dropout=config['drop_out'],n_layers=config['depth'],update_edge = config['update_edge'],embedding=config['embedding'],embedding_dim=config['embedding_dim'],norm_feat=config['norm_feat'],embed_ss=config['embed_ss'])
     diffusion_model = GraDe_IF(model,timesteps=config['timesteps'],objective=config['objective'],config=config)
     trainer  = Trianer(config,
                         diffusion_model,
