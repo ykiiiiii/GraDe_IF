@@ -702,7 +702,7 @@ if __name__ == "__main__" :
     parser.add_argument('--norm_feat', action='store_true',#default = False,
                         help='whether normalization node feature in egnn')  
 
-    parser.add_argument('--updeate_edge', action='store_false',help='whether update edge feature in egnn')
+    parser.add_argument('--update_edge', action='store_false',help='whether update edge feature in egnn')
     
     parser.add_argument('--embed_ss', type = int,default=-1,
                         help='when add ss embedding into gnn') 
@@ -723,7 +723,7 @@ if __name__ == "__main__" :
     elif config['dataset'] == 'TS':
         basedir = config['train_dir']
         train_ID ,val_ID= os.listdir(config['ts_train_dir']),os.listdir(config['ts_test_dir'])
-        train_dataset = Cath(train_ID,config['ts_train_dir'])#+数据
+        train_dataset = Cath(train_ID,config['ts_train_dir'])#
         val_dataset = Cath(val_ID,config['ts_test_dir'])
         test_dataset = Cath(val_ID,config['ts_test_dir'])
         print(f'train on TS dataset with {len(train_dataset)}  training data and {len(val_dataset)}  val data')        
@@ -736,7 +736,7 @@ if __name__ == "__main__" :
     config['input_feat_dim'] = input_feat_dim
     config['edge_attr_dim'] = edge_attr_dim
 
-    model = EGNN_NET(input_feat_dim=input_feat_dim,hidden_channels=config['hidden_dim'],edge_attr_dim=edge_attr_dim,dropout=config['drop_out'],n_layers=config['depth'],update_edge = config['updeate_edge'],embedding=config['embedding'],embedding_dim=config['embedding_dim'],norm_feat=config['norm_feat'],embed_ss=config['embed_ss'])
+    model = EGNN_NET(input_feat_dim=input_feat_dim,hidden_channels=config['hidden_dim'],edge_attr_dim=edge_attr_dim,dropout=config['drop_out'],n_layers=config['depth'],update_edge = config['update_edge'],embedding=config['embedding'],embedding_dim=config['embedding_dim'],norm_feat=config['norm_feat'],embed_ss=config['embed_ss'])
     diffusion_model = GraDe_IF(model,timesteps=config['timesteps'],objective=config['objective'],config=config)
     trainer  = Trianer(config,
                         diffusion_model,
