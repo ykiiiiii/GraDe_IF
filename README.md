@@ -44,12 +44,12 @@ Thanks for open-sourcing!
 ## Citation 
 If you consider our codes and datasets useful, please cite:
 ```
-@article{yi2023graph,
-      title={Graph Denoising Diffusion for Inverse Protein Folding}, 
-      author={Kai Yi and Bingxin Zhou and Yiqing Shen and Pietro Liò and Yu Guang Wang},
+@inproceedings{
+      yi2023graph,
+      title={Graph Denoising Diffusion for Inverse Protein Folding},
+      author={Kai Yi and Bingxin Zhou and Yiqing Shen and Pietro Lio and Yu Guang Wang},
+      booktitle={Thirty-seventh Conference on Neural Information Processing Systems},
       year={2023},
-      eprint={2306.16819},
-      archivePrefix={arXiv},
-      primaryClass={q-bio.QM}
-}
+      url={https://openreview.net/forum?id=u4YXKKG5dX}
+      }
 ```
