@@ -41,7 +41,7 @@ More details can be found in the [jupyter notebook](diffusion/inverse_folding.ip
 Here is an ablation study of two key parameters, `step` and `diverse`, in the `ddim_sample` function used to get improved results presented in the paper. The following results were computed after 50 ensemble runs. One can find how to do ensembles in the [jupyter notebook](diffusion/inverse_folding.ipynb).
 
 
-### Blosum Kernel - Diverse Mode
+### BLOSUM Kernel - Diverse Mode
 
 | Step | Recovery Rate | Perplexity | Single Sample Recovery Rate |
 |------|---------------|------------|-----------------------------|
@@ -50,7 +50,7 @@ Here is an ablation study of two key parameters, `step` and `diverse`, in the `d
 | 100  | 0.5356        | 4.98       | 0.4213                      |
 | 50   | 0.4827        | 8.02       | 0.3745                      |
 
-### Blosum Kernel - Non-Diverse Mode
+### BLOSUM Kernel - Non-Diverse Mode
 
 | Step | Recovery Rate | Perplexity | Single Sample Recovery Rate |
 |------|---------------|------------|-----------------------------|
