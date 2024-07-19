@@ -276,7 +276,7 @@ class EGNN_Sparse(MessagePassing):
                                         edge_index, size, kwargs)
         except AttributeError:
             size = self._check_input(edge_index, size)
-            coll_dict = self._collect(self.__user_args__,
+            coll_dict = self._collect(self._user_args,
                                         edge_index, size, kwargs) 
                        
         msg_kwargs = self.inspector.distribute('message', coll_dict)
